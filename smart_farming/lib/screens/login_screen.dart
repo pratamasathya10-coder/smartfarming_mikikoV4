@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../state/app_state.dart';
 import '../widgets/brand_logos.dart';
@@ -27,15 +28,95 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-    context.read<AppState>().login(email: _email.text, name: 'Petani Demo');
-  }
+
+      try {
+        await context.read<AppState>().login(
+          email: _email.text.trim(),
+          password: _password.text,
+          name: 'Petani Demo',
+        );
+      } on FirebaseAuthException catch (e) {
+        if (!mounted) return;
+
+        String message;
+
+        switch (e.code) {
+          case 'user-not-found':
+          case 'invalid-credential':
+            message = 'Email atau kata sandi salah.';
+            break;
+          case 'wrong-password':
+            message = 'Kata sandi salah.';
+            break;
+          case 'invalid-email':
+            message = 'Format email tidak valid.';
+            break;
+          case 'too-many-requests':
+            message = 'Terlalu banyak percobaan. Coba lagi nanti.';
+            break;
+          default:
+            message = 'Login gagal: ${e.message ?? e.code}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      } catch (e) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Terjadi kesalahan: $e')),
+        );
+      } finally {
+        if (mounted) {
+          setState(() => _loading = false);
+        }
+      }
+    }
 
   void _demoLogin() {
-    context.read<AppState>().login(email: 'demo@smartfarming.id', name: 'Pak Budi');
+  context.read<AppState>().loginDemo();
+}
+
+Future<void> _resetPassword() async {
+  final email = _email.text.trim();
+
+  if (email.isEmpty || !email.contains('@')) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Masukkan email terlebih dahulu.'),
+      ),
+    );
+    return;
   }
+
+  try {
+    await FirebaseAuth.instance.sendPasswordResetEmail(
+      email: email,
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Jika email terdaftar, instruksi reset kata sandi akan dikirim.',
+        ),
+      ),
+    );
+  } on FirebaseAuthException catch (e) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Gagal mengirim email reset: ${e.message ?? e.code}'),
+      ),
+    );
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +181,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () => _demoLogin(),
+                        onPressed: _resetPassword,
                         child: const Text('Lupa kata sandi?'),
                       ),
                     ),

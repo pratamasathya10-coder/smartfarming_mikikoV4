@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="smart_farming"
+        android:label="Smart Farming Mikiko V4"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

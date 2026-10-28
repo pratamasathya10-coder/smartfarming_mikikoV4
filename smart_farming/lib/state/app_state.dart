@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../services/firebase_sensor_service.dart';
 
 import '../data/mock_data.dart';
 import '../models/models.dart';
@@ -13,15 +17,35 @@ import '../services/notification_service.dart';
 /// Semua layar membaca data dari sini. Saat backend nyata siap, cukup ganti
 /// isi method yang bertanda `// TODO(api)` dengan pemanggilan HTTP.
 class AppState extends ChangeNotifier {
-  AppState() {
-    _farms = MockData.farms();
-    _selectedFarmId = _farms.first.id;
-    _schedules = MockData.schedules();
-    _tasks = MockData.tasks();
-    _alerts = MockData.initialAlerts();
-    _irrigationLogs = MockData.irrigationLogs();
-    _seedChat();
+  AppState({bool enableFirebase = true}) {
+  _farms = MockData.farms();
+  _selectedFarmId = _farms.first.id;
+  _schedules = MockData.schedules();
+  _tasks = MockData.tasks();
+  _alerts = MockData.initialAlerts();
+  _irrigationLogs = MockData.irrigationLogs();
+
+  if (enableFirebase) {
+    listenToFirebaseSensors();
   }
+
+  _seedChat();
+}
+
+
+  void setUserForTesting({
+  required String email,
+  required String name,
+}) {
+  _user = AppUser(
+    id: 'test-user',
+    name: name.isEmpty ? 'Petani Hebat' : name,
+    email: email,
+    role: UserRole.owner,
+  );
+
+  notifyListeners();
+}
 
   // ---------------------------------------------------------------------------
   // State
@@ -40,8 +64,9 @@ class AppState extends ChangeNotifier {
 
   int _idCounter = 0;
   Timer? _timer;
+  StreamSubscription<DatabaseEvent>? _sensorSubscription;
   bool _busy = false;
-  bool _liveData = true;
+  bool _liveData = false;
   ThemeMode _themeMode = ThemeMode.dark;
 
   // ---------------------------------------------------------------------------
@@ -92,16 +117,54 @@ class AppState extends ChangeNotifier {
   // Auth
   // ---------------------------------------------------------------------------
 
-  void login({required String email, required String name}) {
-    _user = AppUser(
-      id: 'user-1',
-      name: name.isEmpty ? 'Petani Hebat' : name,
-      email: email.isEmpty ? 'demo@smartfarming.id' : email,
-      role: UserRole.owner,
-    );
-    if (_liveData) startLive();
-    notifyListeners();
-  }
+
+
+    Future<void> login({
+      required String email,
+      required String password,
+      required String name,
+    }) async {
+      try {
+        final credential = await FirebaseAuth.instance
+            .signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+
+        final firebaseUser = credential.user;
+
+        if (firebaseUser == null) {
+          throw Exception('Pengguna tidak ditemukan.');
+        }
+
+        _user = AppUser(
+          id: firebaseUser.uid,
+          name: name.isEmpty
+              ? (firebaseUser.displayName ?? 'Petani Hebat')
+              : name,
+          email: firebaseUser.email ?? email,
+          role: UserRole.owner,
+        );
+
+        if (_liveData) startLive();
+
+        notifyListeners();
+      } on FirebaseAuthException {
+        rethrow;
+      }
+    }
+
+  void loginDemo() {
+  _user = AppUser(
+    id: 'demo-user',
+    name: 'Pengguna Demo',
+    email: 'demo@mikiko.com',
+    role: UserRole.owner,
+  );
+
+  notifyListeners();
+}
+
 
   void logout() {
     _user = null;
@@ -147,12 +210,69 @@ class AppState extends ChangeNotifier {
     _timer = null;
   }
 
+  void listenToFirebaseSensors() {
+  _sensorSubscription?.cancel();
+
+  final sensorService = FirebaseSensorService();
+
+  _sensorSubscription = sensorService.sensorStream.listen(
+    (event) {
+      final rawData = event.snapshot.value;
+
+      if (rawData is! Map) {
+        debugPrint('Data Firebase kosong atau format tidak sesuai.');
+        return;
+      }
+
+      final data = Map<String, dynamic>.from(rawData);
+      final now = DateTime.now();
+      final farm = selectedFarm;
+
+      final sensorValues = <SensorType, double>{
+        SensorType.temperature:
+            (data['temperature'] as num?)?.toDouble() ?? farm.temperature,
+        SensorType.humidity:
+            (data['humidity'] as num?)?.toDouble() ?? farm.humidity,
+        SensorType.soilMoisture:
+            (data['soilMoisture'] as num?)?.toDouble() ?? farm.soilMoisture,
+        SensorType.pressure:
+            (data['pressure'] as num?)?.toDouble() ?? farm.pressure,
+        SensorType.rain:
+            (data['rain'] as num?)?.toDouble() ?? farm.rain,
+      };
+
+      final metrics = <SensorType, SensorMetric>{
+        for (final type in kSensorOrder)
+          type: farm.metric(type).copyWith(
+            value: sensorValues[type]!,
+            updatedAt: now,
+            history: [
+              ...farm.metric(type).history,
+              TimePoint(now, sensorValues[type]!),
+            ],
+          ),
+      };
+
+      _updateFarm(
+        farm.copyWith(
+          metrics: metrics,
+          lastSync: now,
+        ),
+      );
+
+      debugPrint('Data Firebase berhasil memperbarui Dashboard: $data');
+    },
+    onError: (error) {
+      debugPrint('Gagal membaca Firebase: $error');
+    },
+  );
+}
+
   /// Menghasilkan satu siklus pembacaan sensor baru.
   ///
   /// Dipanggil otomatis oleh timer di [startLive], dan dipakai oleh test
   /// untuk memverifikasi logika irigasi tanpa menunggu waktu nyata.
   void simulateTick() {
-    if (!_liveData) return;
     final rnd = Random();
     final now = DateTime.now();
 

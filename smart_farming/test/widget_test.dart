@@ -9,7 +9,9 @@ import 'package:smart_farming/widgets/brand_logos.dart';
 
 void main() {
   testWidgets('login menampilkan kedua logo dalam dark mode', (WidgetTester tester) async {
-    await tester.pumpWidget(const SmartFarmingApp());
+    await tester.pumpWidget(
+      const SmartFarmingApp(enableFirebase: false),
+    );
     await tester.pump();
 
     // Logo perusahaan dan komunitas tampil di layar login.
@@ -25,7 +27,9 @@ void main() {
   });
 
   testWidgets('login demo membawa pengguna ke dasbor', (WidgetTester tester) async {
-    await tester.pumpWidget(const SmartFarmingApp());
+    await tester.pumpWidget(
+      const SmartFarmingApp(enableFirebase: false),
+    );
     await tester.pump();
 
     expect(find.text('Masuk cepat sebagai demo'), findsOneWidget);
@@ -46,12 +50,26 @@ void main() {
   });
 
   testWidgets('navigasi bawah membuka tab irigasi', (WidgetTester tester) async {
-    await tester.pumpWidget(const SmartFarmingApp());
+    await tester.pumpWidget(
+      const SmartFarmingApp(enableFirebase: false),
+    );
     await tester.pump();
 
-    await tester.tap(find.text('Masuk cepat sebagai demo'));
-    await tester.pump();
+  await tester.tap(find.text('Masuk cepat sebagai demo'));
+  await tester.tap(find.text('Masuk cepat sebagai demo'));
+  await tester.pumpAndSettle();
 
+  expect(
+    find.byType(HomeShell),
+    findsOneWidget,
+    reason: 'HomeShell belum muncul setelah tombol demo ditekan',
+  );
+
+  expect(
+    find.byType(HomeShell),
+    findsOneWidget,
+    reason: 'HomeShell belum muncul setelah tombol demo ditekan',
+  );
     final context = tester.element(find.byType(HomeShell));
     Provider.of<AppState>(context, listen: false).stopLive();
     await tester.pumpAndSettle();

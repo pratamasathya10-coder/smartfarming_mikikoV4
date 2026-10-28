@@ -151,7 +151,7 @@ class SettingsScreen extends StatelessWidget {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => showAboutDialog(
                     context: context,
-                    applicationName: 'Smart Farming',
+                    applicationName: 'Smart Farming Mikiko V4',
                     applicationVersion: 'v0.1.0 (MVP)',
                     applicationIcon: const MikikoMark(size: 44),
                     children: const <Widget>[
